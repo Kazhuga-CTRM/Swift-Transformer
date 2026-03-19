@@ -1,6 +1,8 @@
-# SWIFT Message Generator — Full Documentation
+# SWIFT & ISO 20022 Message Generator
 
 > **Package:** `com.kazhuga.swift` · **License:** MIT · **Java:** 11+ · **Dependencies:** Zero
+
+A pure Java library for generating, validating, and parsing **SWIFT FIN (MT)** and **ISO 20022 (MX)** financial messages. Built for treasury, commodities, and capital markets teams — fully compatible with **OpenLink Findur and Endur**.
 
 ---
 
@@ -11,49 +13,66 @@
 3. [Project Structure](#3-project-structure)
 4. [Getting Started](#4-getting-started)
 5. [Core Concepts](#5-core-concepts)
-6. [Data Models](#6-data-models)
-7. [Generating Messages](#7-generating-messages)
-   - [MT103 – Single Customer Credit Transfer](#71-mt103--single-customer-credit-transfer)
-   - [MT202 – Financial Institution Transfer](#72-mt202--financial-institution-transfer)
-   - [MT202COV – Cover Payment](#73-mt202cov--cover-payment)
-   - [MT940 – Customer Statement](#74-mt940--customer-statement)
-   - [MT950 – Bank Statement](#75-mt950--bank-statement)
+6. [SWIFT FIN (MT) Messages](#6-swift-fin-mt-messages)
+   - [MT103 – Single Customer Credit Transfer](#61-mt103--single-customer-credit-transfer)
+   - [MT202 – Financial Institution Transfer](#62-mt202--financial-institution-transfer)
+   - [MT202COV – Cover Payment](#63-mt202cov--cover-payment)
+   - [MT940 – Customer Statement](#64-mt940--customer-statement)
+   - [MT950 – Bank Statement](#65-mt950--bank-statement)
+7. [ISO 20022 (MX) Messages](#7-iso-20022-mx-messages)
+   - [pain.009 – Mandate Initiation Request](#71-pain009--mandate-initiation-request)
+   - [pain.009 Data Model](#72-pain009-data-model)
+   - [pain.009 Generation](#73-pain009-generation)
+   - [pain.009 Scenarios](#74-pain009-scenarios)
+   - [pain.009 Validation](#75-pain009-validation)
 8. [Parsing Wire Format](#8-parsing-wire-format)
-9. [Validation](#9-validation)
+9. [Validation Reference](#9-validation-reference)
 10. [SWIFT Format Reference](#10-swift-format-reference)
 11. [Field Catalogue](#11-field-catalogue)
-12. [Running Tests](#12-running-tests)
-13. [Extending the Library](#13-extending-the-library)
-14. [FAQ](#14-faq)
-15. [Disclaimer](#15-disclaimer)
+12. [OpenLink Findur and Endur Integration](#12-openlink-findur-and-endur-integration)
+13. [Running Tests](#13-running-tests)
+14. [Extending the Library](#14-extending-the-library)
+15. [FAQ](#15-faq)
+16. [Disclaimer](#16-disclaimer)
 
 ---
 
 ## 1. Overview
 
-The **SWIFT Message Generator** is a pure Java library for generating, validating, and parsing SWIFT FIN messages. It targets developers building payment systems, treasury platforms, bank integrations, and testing tools who need standards-compliant MT message output without pulling in heavyweight vendor SDKs.
+The **SWIFT and ISO 20022 Message Generator** is a production-ready Java library that handles two message families from a single codebase:
 
-### Key design principles
+- **SWIFT FIN (MT)** — legacy wire-format messages used by correspondent banking, nostro management, and treasury settlement
+- **ISO 20022 (MX / pain)** — XML-based messages used by SEPA, modern clearing schemes, and direct debit mandate management
+
+### Design principles
 
 | Principle | Implementation |
 |---|---|
-| **Zero runtime dependencies** | No Spring, Jackson, or third-party jars required |
-| **Validate before you build** | Every builder validates input data before emitting wire bytes |
-| **Round-trip fidelity** | `SwiftParser` parses any generated wire string back to a typed object |
-| **Correct SWIFT formatting** | YYMMDD dates, comma decimal amounts, 11-char BICs, and field sequences handled automatically |
-| **Extensible architecture** | Add new MT types by subclassing `AbstractMessageBuilder` |
+| **Zero runtime dependencies** | No Spring, Jackson, or third-party jars |
+| **Validate before you build** | Every builder validates input before emitting output |
+| **Consistent facade** | `SwiftGenerator` and `ISO20022Generator` share the same API pattern |
+| **Standards-correct output** | YYMMDD dates, comma decimals, 11-char BICs, correct field sequences, schema-valid XML |
+| **Extensible architecture** | Add new message types by subclassing `AbstractMessageBuilder` or following the `Pain009Builder` pattern |
 
 ---
 
 ## 2. Supported Message Types
 
+### SWIFT FIN (MT)
+
 | Type | Name | Category | Use Case |
 |------|------|----------|----------|
-| **MT103** | Single Customer Credit Transfer | Payments (Cat 1) | Cross-border payment initiated by a corporate customer |
+| **MT103** | Single Customer Credit Transfer | Payments (Cat 1) | Cross-border payment from corporate to beneficiary |
 | **MT202** | General Financial Institution Transfer | Payments (Cat 2) | Bank-to-bank fund movement, nostro funding |
-| **MT202COV** | General Financial Institution Transfer (Cover) | Payments (Cat 2) | Cover leg accompanying an MT103 under the serial payment method |
-| **MT940** | Customer Statement Message | Cash Management (Cat 9) | Bank sends a detailed account statement to a corporate client |
-| **MT950** | Statement Message | Cash Management (Cat 9) | Bank-to-bank nostro reconciliation statement |
+| **MT202COV** | Cover Payment | Payments (Cat 2) | Cover leg accompanying an MT103 |
+| **MT940** | Customer Statement Message | Cash Management (Cat 9) | Bank to corporate account statement |
+| **MT950** | Statement Message | Cash Management (Cat 9) | Bank-to-bank nostro reconciliation |
+
+### ISO 20022 (MX)
+
+| Type | Name | Schema Version | Use Case |
+|------|------|----------------|----------|
+| **pain.009** | Mandate Initiation Request | pain.009.001.08 | Establish a direct debit mandate — SEPA Core, B2B, or bilateral |
 
 ---
 
@@ -63,51 +82,63 @@ The **SWIFT Message Generator** is a pure Java library for generating, validatin
 swift-message-generator/
 ├── src/
 │   ├── main/java/com/kazhuga/swift/
+│   │   │
 │   │   ├── core/
-│   │   │   ├── SwiftField.java          # A single :TAG:VALUE field
-│   │   │   ├── SwiftBlock.java          # One of the five SWIFT blocks
-│   │   │   └── SwiftMessage.java        # Full message (blocks 1–5)
+│   │   │   ├── SwiftField.java            # A single :TAG:VALUE field
+│   │   │   ├── SwiftBlock.java            # One of the five SWIFT blocks
+│   │   │   └── SwiftMessage.java          # Full message (blocks 1–5)
 │   │   │
 │   │   ├── fields/
-│   │   │   └── SwiftFieldDefinitions.java  # 50+ field tag catalogue
+│   │   │   └── SwiftFieldDefinitions.java # 50+ field tag catalogue
 │   │   │
 │   │   ├── model/
-│   │   │   └── SwiftData.java           # All input POJOs:
-│   │   │                                #   TransferData, StatementData,
-│   │   │                                #   StatementLine, BankParty, Customer
+│   │   │   └── SwiftData.java             # TransferData, StatementData,
+│   │   │                                  # StatementLine, BankParty, Customer
 │   │   │
 │   │   ├── util/
-│   │   │   └── SwiftFormatUtil.java     # Date / amount / BIC helpers
+│   │   │   └── SwiftFormatUtil.java       # Date / amount / BIC helpers
 │   │   │
 │   │   ├── validation/
-│   │   │   ├── ValidationResult.java    # Holds errors / warnings / info
-│   │   │   ├── MT103Validator.java      # MT103-specific rules
-│   │   │   └── SwiftMessageValidator.java  # MT202, MT940, MT950 rules
+│   │   │   ├── ValidationResult.java      # Holds errors / warnings / info
+│   │   │   ├── MT103Validator.java
+│   │   │   └── SwiftMessageValidator.java # MT202, MT940, MT950
 │   │   │
 │   │   ├── messages/
-│   │   │   ├── AbstractMessageBuilder.java  # Base class — headers + helpers
+│   │   │   ├── AbstractMessageBuilder.java
 │   │   │   ├── MT103Builder.java
-│   │   │   ├── MT202Builder.java        # Handles both MT202 and MT202COV
-│   │   │   ├── MT940Builder.java        # Handles both MT940 and MT950
-│   │   │   └── MT950Builder.java        # Thin wrapper over MT940Builder
+│   │   │   ├── MT202Builder.java          # Handles MT202 and MT202COV
+│   │   │   ├── MT940Builder.java          # Handles MT940 and MT950
+│   │   │   └── MT950Builder.java
 │   │   │
 │   │   ├── parser/
-│   │   │   ├── SwiftParser.java         # Wire string → SwiftMessage
+│   │   │   ├── SwiftParser.java           # Wire string → SwiftMessage
 │   │   │   └── SwiftParseException.java
 │   │   │
 │   │   ├── generator/
-│   │   │   └── SwiftGenerator.java      # ← Main entry point
+│   │   │   └── SwiftGenerator.java        # ← MT entry point
+│   │   │
+│   │   ├── iso20022/
+│   │   │   ├── model/
+│   │   │   │   └── Pain009Data.java       # All pain.009 POJOs
+│   │   │   ├── pain009/
+│   │   │   │   ├── Pain009Builder.java    # Generates pain.009 XML
+│   │   │   │   ├── ISO20022Generator.java # ← MX entry point
+│   │   │   │   └── Pain009SampleFactory.java
+│   │   │   └── validation/
+│   │   │       └── Pain009Validator.java
 │   │   │
 │   │   └── demo/
-│   │       ├── SampleDataFactory.java   # Realistic sample data
-│   │       └── SwiftDemo.java           # Runnable demonstration
+│   │       ├── SampleDataFactory.java
+│   │       └── SwiftDemo.java
 │   │
 │   └── test/java/com/kazhuga/swift/
-│       └── SwiftLibraryTests.java       # 61 self-contained unit tests
+│       ├── SwiftLibraryTests.java         # 61 MT tests
+│       └── iso20022/pain009/
+│           └── Pain009Tests.java          # 58 pain.009 tests
 │
-├── build.sh                             # Shell build script (no Maven needed)
-├── pom.xml                              # Maven build file
-├── LICENSE                             # MIT
+├── build.sh
+├── pom.xml
+├── LICENSE
 └── README.md
 ```
 
@@ -118,17 +149,17 @@ swift-message-generator/
 ### Prerequisites
 
 - Java 11 or later (`java -version`)
-- No other tools required
+- No other tools required at runtime
 
-### Clone and run in 30 seconds
+### Clone and run
 
 ```bash
 git clone https://github.com/YOUR_ORG/swift-message-generator.git
 cd swift-message-generator
 chmod +x build.sh
-./build.sh          # compiles + runs demo
-./build.sh test     # runs 61 unit tests
-./build.sh clean    # removes compiled output
+./build.sh          # compile and run MT demo
+./build.sh test     # run all 119 tests
+./build.sh clean    # remove compiled output
 ```
 
 ### Maven
@@ -139,186 +170,66 @@ mvn test
 mvn exec:java -Dexec.mainClass=com.kazhuga.swift.demo.SwiftDemo
 ```
 
-### Using in your own project
+### Add to your own project
 
-Copy the `src/main/java/com/kazhuga/swift/` tree into your source root. No configuration is required — all classes compile against the standard Java 11 library.
-
-If you use Maven, add the source directory to your build or publish the JAR to your internal repository.
+Copy the `src/main/java/com/kazhuga/swift/` tree into your source root. No configuration or dependency management is required — everything compiles against the standard Java 11 library.
 
 ---
 
 ## 5. Core Concepts
 
-### The five SWIFT blocks
+### SWIFT FIN message structure
 
-Every FIN message is composed of up to five blocks:
+Every FIN message has up to five blocks:
 
 ```
-{1:F01CHASUS33XXX0000123456}        ← Block 1: Basic Header
-{2:I103HSBCGB2LXXXU}               ← Block 2: Application Header
-{3:{108:ABCDE12345678901}}          ← Block 3: User Header (optional)
-{4:                                 ← Block 4: Text Block (your fields)
+{1:F01CHASUS33XXX0000123456}        Block 1 – Basic Header
+{2:I103HSBCGB2LXXXU}               Block 2 – Application Header
+{3:{108:ABCDE12345678901}}          Block 3 – User Header (optional)
+{4:                                 Block 4 – Text Block (your fields)
 :20:PAYREF001
 :23B:CRED
 :32A:230915USD125000,00
 ...
 -}
-{5:{CHK:C2JKGQNJ6688}}             ← Block 5: Trailer (optional)
+{5:{CHK:C2JKGQNJ6688}}             Block 5 – Trailer (optional)
 ```
 
-This library manages all five blocks. You only need to populate the data model — the builder handles field ordering, formatting, and block construction.
+You populate a data model. The builder handles field ordering, formatting, and block assembly.
 
-### SWIFT field format
+### ISO 20022 message structure
 
-Block 4 fields follow the pattern `:TAG:VALUE`, where:
+pain.009 is an XML document conforming to the `pain.009.001.08` schema:
 
-- **TAG** is 2 digits optionally followed by a letter — e.g. `32A`, `50K`, `71A`
-- **VALUE** is free-form text governed by the field's format specification
-- Multi-line values use `\n` within the value (e.g. name/address fields)
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.009.001.08" ...>
+  <MndtInitnReq>
+    <GrpHdr>
+      <MsgId>KAZHUGA-PAIN009-001</MsgId>
+      ...
+    </GrpHdr>
+    <Mndt>
+      <MndtId>MNDT-ENRG-2024-00145</MndtId>
+      ...
+    </Mndt>
+  </MndtInitnReq>
+</Document>
+```
 
-### SWIFT character set (set X)
-
-Field values may only contain: `A–Z a–z 0–9 / - ? : ( ) . , ' + space newline`
-
-`SwiftFormatUtil.sanitizeSwiftX(input)` strips any other characters.
+You populate `Pain009Data` POJOs. The builder handles XML construction, escaping, and indentation.
 
 ---
 
-## 6. Data Models
+## 6. SWIFT FIN (MT) Messages
 
-All input data is supplied through plain Java objects in `com.kazhuga.swift.model.SwiftData`.
-
-### BankParty
-
-Represents a bank or financial institution.
-
-```java
-BankParty bank = new BankParty();
-bank.bic       = "HSBCGB2L";          // 8 or 11-char BIC
-bank.accountNo = "GB29NWBK60161331926819"; // IBAN or account number
-bank.name      = "HSBC BANK PLC";
-bank.address1  = "8 CANADA SQUARE";
-bank.city      = "LONDON";
-bank.country   = "GB";
-```
-
-Convenience constructors:
-
-```java
-new BankParty("HSBCGB2L")                          // BIC only
-new BankParty("HSBCGB2L", "GB29...", "HSBC BANK")  // BIC + account + name
-```
-
-### Customer
-
-Represents an ordering customer or beneficiary (corporate or individual).
-
-```java
-Customer customer = new Customer();
-customer.accountNo = "DE89370400440532013000";
-customer.name      = "ACME CORPORATION";
-customer.address1  = "100 MAIN STREET";
-customer.address2  = "SUITE 200";
-customer.city      = "BERLIN";
-customer.country   = "DE";
-customer.bic       = null;  // if set, field 50A / 59A is used instead of 50K / 59
-```
-
-### TransferData
-
-Input for MT103, MT202, MT202COV.
-
-```java
-TransferData data = new TransferData();
-
-// Mandatory for MT103
-data.transactionReference = "PAYREF20230915001"; // max 16 chars
-data.bankOperationCode    = "CRED";              // CRED / CRTS / SPAY / SSTD / SPRI
-data.valueDate            = LocalDate.of(2023, 9, 15);
-data.currency             = "USD";               // ISO 4217
-data.amount               = new BigDecimal("125000.00");
-data.detailsOfCharges     = "SHA";               // OUR / BEN / SHA
-data.orderingCustomer     = ...;                 // Customer
-data.beneficiaryCustomer  = ...;                 // Customer
-
-// Mandatory for MT202 (in addition to above minus 23B / 71A)
-data.relatedReference     = "USPAY20230915001";  // max 16 chars
-
-// Optional
-data.instructedCurrency   = "GBP";
-data.instructedAmount     = new BigDecimal("99800.00");
-data.exchangeRate         = new BigDecimal("1.25200");
-data.orderingInstitution  = ...;  // BankParty → Field 52A
-data.senderCorrespondent  = ...;  // BankParty → Field 53A
-data.receiverCorrespondent= ...;  // BankParty → Field 54A
-data.intermediaryBank     = ...;  // BankParty → Field 56A
-data.accountWithInstitution=...;  // BankParty → Field 57A
-data.remittanceInfo       = "INV/2023/09/00456 PAYMENT FOR SERVICES";
-data.senderToReceiverInfo = "/ACC/FOR NOSTRO FUNDING";
-data.regulatoryReporting  = "/ORDERRES/BE//MEILAAN 1, 1000 BRUSSEL";
-
-// Block 1/2 headers (auto-generated defaults if omitted)
-data.senderBic   = "CHASUS33XXX";
-data.receiverBic = "HSBCGB2LXXX";
-```
-
-### StatementData
-
-Input for MT940 / MT950.
-
-```java
-StatementData data = new StatementData();
-data.transactionReference  = "STMT20230930EUR";
-data.accountIdentification = "DE89370400440532013000"; // Field 25
-data.accountBic            = "DEUTDEDB";               // Field 25P (optional)
-data.statementNumber       = 9;                        // Field 28C first part
-data.sequenceNumber        = 1;                        // Field 28C second part (0 = omit)
-data.currency              = "EUR";
-data.isIntermediate        = false;  // true → fields 60M/62M, false → 60F/62F
-data.openingBalanceIndicator = 'C';  // C = credit, D = debit
-data.openingDate             = LocalDate.of(2023, 9, 1);
-data.openingBalance          = new BigDecimal("245300.00");
-data.closingBalanceIndicator = 'C';
-data.closingDate             = LocalDate.of(2023, 9, 30);
-data.closingBalance          = new BigDecimal("340700.00");
-// Optional closing available balance (Field 64)
-data.closingAvailableBalance = new BigDecimal("340700.00");
-data.closingAvailableDate    = LocalDate.of(2023, 9, 30);
-data.senderBic   = "DEUTDEDBXXX";
-data.receiverBic = "BMUNDE8BXXX";
-// Statement lines added separately — see Section 7.4
-```
-
-### StatementLine
-
-A single entry in an MT940/MT950 statement (Field 61 + optional Field 86).
-
-```java
-StatementLine line = new StatementLine(
-    LocalDate.of(2023, 9, 4),  // value date
-    true,                       // isCredit (true = C, false = D)
-    new BigDecimal("12500.00"), // amount
-    "TRF",                      // transaction type (3 chars)
-    "INV456RECEIPT"             // reference for account owner (max 16 chars)
-);
-line.entryDate     = null;                        // optional MMDD entry date
-line.isFunds       = false;                       // true adds 'F' to debit/credit indicator
-line.additionalInfo = "Customer payment for Invoice 456"; // Field 86 (MT940 only)
-line.referenceOfAccountServicingInstitution = "BANKREF001"; // optional //ref in Field 61
-data.lines.add(line);
-```
-
----
-
-## 7. Generating Messages
-
-All generation goes through `SwiftGenerator` — instantiate once and reuse.
+All MT generation goes through `SwiftGenerator`.
 
 ```java
 SwiftGenerator generator = new SwiftGenerator();
 ```
 
-### 7.1 MT103 – Single Customer Credit Transfer
+### 6.1 MT103 – Single Customer Credit Transfer
 
 ```java
 TransferData data = new TransferData();
@@ -329,66 +240,54 @@ data.valueDate            = LocalDate.of(2023, 9, 15);
 data.currency             = "USD";
 data.amount               = new BigDecimal("125000.00");
 
-// Ordering customer
 Customer oc = new Customer("US12345678901234567890", "ACME CORPORATION");
 oc.address1 = "100 MAIN STREET";
 oc.city     = "NEW YORK";
 data.orderingCustomer = oc;
 
-// Beneficiary
 Customer bc = new Customer("GB29NWBK60161331926819", "BRITISH SUPPLIER LTD");
 bc.address1 = "14 CANNON STREET";
 bc.city     = "LONDON";
 data.beneficiaryCustomer = bc;
 
-// Account with institution (beneficiary bank)
-data.accountWithInstitution = new BankParty("HSBCGB2L", "GB29NWBK60161331926819", "HSBC BANK PLC");
-
+data.accountWithInstitution = new BankParty("HSBCGB2L");
 data.remittanceInfo = "INV/2023/09/00456 PAYMENT FOR SERVICES";
 data.senderBic      = "CHASUS33XXX";
 data.receiverBic    = "HSBCGB2LXXX";
 
-// Generate
 SwiftMessage msg  = generator.generateMT103(data);
-String       wire = msg.toSwiftString();     // raw wire format
-System.out.println(msg.toPrettyString());    // formatted debug output
+String       wire = msg.toSwiftString();
+System.out.println(msg.toPrettyString());
 ```
 
-**Required fields for MT103:** `transactionReference`, `bankOperationCode`, `valueDate`, `currency`, `amount`, `orderingCustomer`, `beneficiaryCustomer`, `detailsOfCharges`
+**Mandatory:** `transactionReference`, `bankOperationCode`, `valueDate`, `currency`, `amount`, `orderingCustomer`, `beneficiaryCustomer`, `detailsOfCharges`
 
-**Optional fields:** `instructedCurrency/Amount` (33B), `exchangeRate` (36), `orderingInstitution` (52A), `senderCorrespondent` (53A), `receiverCorrespondent` (54A), `intermediaryBank` (56A), `accountWithInstitution` (57A), `remittanceInfo` (70), `senderToReceiverInfo` (72), `regulatoryReporting` (77B)
+**Optional:** `instructedCurrency/Amount` (33B), `exchangeRate` (36), `orderingInstitution` (52A), `senderCorrespondent` (53A), `receiverCorrespondent` (54A), `intermediaryBank` (56A), `accountWithInstitution` (57A), `remittanceInfo` (70), `senderToReceiverInfo` (72), `regulatoryReporting` (77B)
 
 ---
 
-### 7.2 MT202 – Financial Institution Transfer
+### 6.2 MT202 – Financial Institution Transfer
 
 ```java
 TransferData data = new TransferData();
 data.transactionReference = "NOSTRO20230915A";
-data.relatedReference     = "PAYREF20230915001";  // mandatory for MT202
+data.relatedReference     = "PAYREF20230915001";   // mandatory for MT202
 data.valueDate            = LocalDate.of(2023, 9, 15);
 data.currency             = "USD";
 data.amount               = new BigDecimal("5000000.00");
-
-// Ordering institution
 data.orderingInstitution  = new BankParty("CHASUS33");
-
-// Beneficiary institution (Field 58A)
 data.accountWithInstitution = new BankParty("HSBCGB2L", "400-123456", "HSBC BANK PLC");
-
 data.senderBic   = "CHASUS33XXX";
 data.receiverBic = "CITIUS33XXX";
 
 SwiftMessage msg = generator.generateMT202(data);
 ```
 
-**Required fields for MT202:** `transactionReference`, `relatedReference`, `valueDate`, `currency`, `amount`, and a beneficiary institution (via `accountWithInstitution` or `beneficiaryCustomer.bic`)
+**Mandatory:** `transactionReference`, `relatedReference`, `valueDate`, `currency`, `amount`, beneficiary institution via `accountWithInstitution` or `beneficiaryCustomer.bic`
 
 ---
 
-### 7.3 MT202COV – Cover Payment
-
-MT202COV is identical to MT202 but also carries the underlying customer credit transfer details (fields 50K and 59) in a `/COV/` sub-sequence.
+### 6.3 MT202COV – Cover Payment
 
 ```java
 TransferData data = new TransferData();
@@ -397,18 +296,12 @@ data.relatedReference     = "PAYREF20230915001";
 data.valueDate            = LocalDate.of(2023, 9, 15);
 data.currency             = "USD";
 data.amount               = new BigDecimal("125000.00");
+data.accountWithInstitution = new BankParty("HSBCGB2L");
 
-// Beneficiary institution
-data.accountWithInstitution = new BankParty("HSBCGB2L", "400-123456", "HSBC BANK PLC");
-
-// Underlying ordering customer
 Customer oc = new Customer("US12345678901234567890", "ACME CORPORATION");
-oc.address1 = "100 MAIN STREET, NEW YORK, US";
 data.orderingCustomer = oc;
 
-// Underlying beneficiary
 Customer bc = new Customer("GB29NWBK60161331926819", "BRITISH SUPPLIER LTD");
-bc.address1 = "14 CANNON STREET, LONDON, GB";
 data.beneficiaryCustomer = bc;
 
 data.remittanceInfo = "INV/2023/09/00456";
@@ -420,60 +313,41 @@ SwiftMessage msg = generator.generateMT202COV(data);
 
 ---
 
-### 7.4 MT940 – Customer Statement
+### 6.4 MT940 – Customer Statement
 
 ```java
 StatementData data = new StatementData();
 data.transactionReference  = "STMT20230930EUR";
 data.accountIdentification = "DE89370400440532013000";
-data.accountBic            = "DEUTDEDB";      // adds field 25P
+data.accountBic            = "DEUTDEDB";
 data.statementNumber       = 9;
 data.sequenceNumber        = 1;
 data.currency              = "EUR";
 data.isIntermediate        = false;
 
-// Opening balance
 data.openingBalanceIndicator = 'C';
 data.openingDate             = LocalDate.of(2023, 9, 1);
 data.openingBalance          = new BigDecimal("245300.00");
 
-// Statement lines
 StatementLine credit = new StatementLine(
-        LocalDate.of(2023, 9, 4), true,
-        new BigDecimal("12500.00"), "TRF", "INV456RECEIPT");
+        LocalDate.of(2023, 9, 4), true, new BigDecimal("12500.00"), "TRF", "INV456RECEIPT");
 credit.additionalInfo = "Customer payment for Invoice 456";
 data.lines.add(credit);
 
-StatementLine debit = new StatementLine(
-        LocalDate.of(2023, 9, 7), false,
-        new BigDecimal("3200.00"), "CHK", "CHQ00012345");
-debit.additionalInfo = "Cheque payment – supplier";
-data.lines.add(debit);
-
-// Closing balance
 data.closingBalanceIndicator = 'C';
 data.closingDate             = LocalDate.of(2023, 9, 30);
-data.closingBalance          = new BigDecimal("254600.00");
-
-// Closing available balance (Field 64, optional)
-data.closingAvailableBalance = new BigDecimal("254600.00");
-data.closingAvailableDate    = LocalDate.of(2023, 9, 30);
-
+data.closingBalance          = new BigDecimal("257800.00");
 data.senderBic   = "DEUTDEDBXXX";
 data.receiverBic = "BMUNDE8BXXX";
 
 SwiftMessage msg = generator.generateMT940(data);
 ```
 
-**Note:** Field 86 (Information to Account Owner) is generated automatically from `StatementLine.additionalInfo`. It is omitted from MT950.
-
-**Required fields for MT940:** `transactionReference`, `accountIdentification`, `statementNumber`, `currency`, `openingBalance`, `openingDate`, `openingBalanceIndicator`, `closingBalance`, `closingDate`, `closingBalanceIndicator`
+Field 86 (Information to Account Owner) is generated from `StatementLine.additionalInfo`. It is omitted from MT950.
 
 ---
 
-### 7.5 MT950 – Bank Statement
-
-MT950 is structurally identical to MT940 but intended for bank-to-bank exchange. Field 86 is never included.
+### 6.5 MT950 – Bank Statement
 
 ```java
 StatementData data = new StatementData();
@@ -484,7 +358,7 @@ data.currency              = "USD";
 data.openingBalanceIndicator = 'C';
 data.openingDate             = LocalDate.of(2023, 9, 1);
 data.openingBalance          = new BigDecimal("10000000.00");
-// ... add lines ...
+// add lines
 data.closingBalanceIndicator = 'C';
 data.closingDate             = LocalDate.of(2023, 9, 30);
 data.closingBalance          = new BigDecimal("9000000.00");
@@ -494,9 +368,263 @@ SwiftMessage msg = generator.generateMT950(data);
 
 ---
 
+## 7. ISO 20022 (MX) Messages
+
+### 7.1 pain.009 – Mandate Initiation Request
+
+`pain.009.001.08` (MandateInitiationRequest) is sent by a creditor or its agent to a debtor's bank to establish a direct debit mandate. Once accepted, the mandate authorises future `pain.008` (CustomerDirectDebitInitiation) collections.
+
+**Typical flow in treasury and commodities:**
+
+```
+Creditor              Creditor's Bank         Debtor's Bank
+    |                      |                       |
+    |── pain.009 ─────────►|── pain.009 ──────────►|
+    |                      |                       | (mandate registered)
+    |◄────────────────────|◄── pain.010/011 ───────|
+    |  (accepted/amended)  |                       |
+    |                      |                       |
+    |── pain.008 ─────────►|── direct debit ───────►|
+    |  (collect payment)   |                       |
+```
+
+All generation goes through `ISO20022Generator`.
+
+```java
+ISO20022Generator generator = new ISO20022Generator();
+```
+
+---
+
+### 7.2 pain.009 Data Model
+
+All input data lives in `com.kazhuga.swift.iso20022.model.Pain009Data` as static inner classes.
+
+#### GroupHeader
+
+```java
+GroupHeader hdr = new GroupHeader();
+hdr.messageId            = "KAZHUGA-PAIN009-001";  // max 35 chars, unique
+hdr.creationDateTime     = LocalDateTime.now();
+hdr.numberOfTransactions = 1;                        // must match mandates.size()
+
+PartyId initiatingParty = new PartyId("KAZHUGA ENERGY TRADING LTD");
+initiatingParty.lei = "5493001KJTIIGC8Y1R12";       // optional LEI
+hdr.initiatingParty = initiatingParty;
+```
+
+#### MandateData — core fields
+
+```java
+MandateData m = new MandateData();
+
+// Identification
+m.mandateId        = "MNDT-ENRG-2024-00145";    // max 35 chars
+m.mandateRequestId = "MREQ-ENRG-2024-00145";    // max 35 chars
+m.creditorSchemeId = "DE98ZZZ09999999999";        // SEPA creditor identifier
+
+// Mandate type
+m.type = new MandateType();
+m.type.sequenceType        = "RCUR";   // FRST / RCUR / FNAL / OOFF
+m.type.localInstrumentCode = "CORE";   // CORE / B2B / COR1 / PRIV
+m.type.categoryPurposeCode = "ENRG";   // optional
+
+// Frequency and collection dates
+m.frequency           = new Frequency("MNTH");  // DAIL/WEEK/TOWK/MNTH/QUTR/SEMI/YEAR/ADHO
+m.firstCollectionDate = LocalDate.of(2024, 4, 1);
+m.finalCollectionDate = LocalDate.of(2026, 3, 31);  // null = open-ended
+
+// Maximum collection amount
+m.maximumAmount = new BigDecimal("50000.00");
+m.currency      = "EUR";
+
+// Creditor
+m.creditor        = new PartyId("KAZHUGA ENERGY TRADING LTD");
+m.creditorAccount = new AccountId("DE89370400440532013000", "EUR");
+m.creditorAgent   = new BankAgent("DEUTDEDB", "DEUTSCHE BANK AG");
+
+// Debtor
+m.debtor        = new PartyId("RHEIN INDUSTRIEWERKE GMBH");
+m.debtorAccount = new AccountId("DE44500105175407324931", "EUR");
+m.debtorAgent   = new BankAgent("COBADEFFXXX", "COMMERZBANK AG");
+
+// Signature
+m.signatureDate  = LocalDate.of(2024, 3, 10);
+m.signaturePlace = "Frankfurt am Main";
+
+// Purpose and remittance
+m.purposeCode           = "ENRG";
+m.remittanceInformation = "MONTHLY GAS SUPPLY CONTRACT REF/2024/ENRG/00145";
+```
+
+#### Supporting types
+
+| Class | Key Fields | Notes |
+|---|---|---|
+| `PartyId` | `name`, `bic`, `lei`, `taxId`, `address` | Creditor or debtor party |
+| `AccountId` | `iban`, `bban`, `currency`, `accountName` | IBAN preferred; BBAN as fallback |
+| `BankAgent` | `bic`, `clearingSystemCode`, `memberIdentification`, `name`, `address` | BIC or clearing member ID required |
+| `MandateType` | `sequenceType`, `localInstrumentCode`, `categoryPurposeCode` | Scheme and collection type |
+| `Frequency` | `code`, `pointInTime` | How often collections occur |
+| `AmendmentIndicator` | 8 boolean flags | Tracks which mandate fields have changed |
+| `PostalAddress` | `streetName`, `buildingNumber`, `postCode`, `townName`, `country` | Used inside `PartyId` and `BankAgent` |
+
+---
+
+### 7.3 pain.009 Generation
+
+```java
+// 1. Build the group header
+GroupHeader hdr = new GroupHeader();
+hdr.messageId          = "KAZHUGA-PAIN009-001";
+hdr.creationDateTime   = LocalDateTime.now();
+hdr.numberOfTransactions = 1;
+hdr.initiatingParty    = new PartyId("MY COMPANY NAME");
+
+// 2. Create the message
+Pain009Message message = new Pain009Message(hdr);
+
+// 3. Build and add a mandate
+MandateData m = new MandateData();
+// ... populate fields ...
+message.addMandate(m);  // automatically keeps NbOfTxs in sync
+
+// 4. Generate XML
+String xml = generator.generatePain009(message);
+System.out.println(xml);
+```
+
+**Sample output (condensed):**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.009.001.08"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:pain.009.001.08 pain.009.001.08.xsd">
+  <MndtInitnReq>
+    <GrpHdr>
+      <MsgId>KAZHUGA-PAIN009-001</MsgId>
+      <CreDtTm>2024-03-15T09:30:00</CreDtTm>
+      <NbOfTxs>1</NbOfTxs>
+      <InitgPty><Nm>KAZHUGA ENERGY TRADING LTD</Nm></InitgPty>
+    </GrpHdr>
+    <Mndt>
+      <MndtId>MNDT-ENRG-2024-00145</MndtId>
+      <MndtReqId>MREQ-ENRG-2024-00145</MndtReqId>
+      <Tp>
+        <SeqTp><Prtry>RCUR</Prtry></SeqTp>
+        <LclInstrm><Prtry>CORE</Prtry></LclInstrm>
+        <CtgyPurp><Cd>ENRG</Cd></CtgyPurp>
+      </Tp>
+      <Ocrncs>
+        <Frqcy><Tp>MNTH</Tp></Frqcy>
+        <FrstColltnDt>2024-04-01</FrstColltnDt>
+        <FnlColltnDt>2026-03-31</FnlColltnDt>
+      </Ocrncs>
+      <MaxAmt Ccy="EUR">50000.00</MaxAmt>
+      <CdtrAgt><FinInstnId><BICFI>DEUTDEDB</BICFI></FinInstnId></CdtrAgt>
+      <Cdtr><Nm>KAZHUGA ENERGY TRADING LTD</Nm>...</Cdtr>
+      <CdtrAcct><Id><IBAN>DE89370400440532013000</IBAN></Id><Ccy>EUR</Ccy></CdtrAcct>
+      <DbtrAgt><FinInstnId><BICFI>COBADEFFXXX</BICFI></FinInstnId></DbtrAgt>
+      <Dbtr><Nm>RHEIN INDUSTRIEWERKE GMBH</Nm>...</Dbtr>
+      <DbtrAcct><Id><IBAN>DE44500105175407324931</IBAN></Id></DbtrAcct>
+      <MndtRltdInf>
+        <DtOfSgntr>2024-03-10</DtOfSgntr>
+        <SgntrPlc>Frankfurt am Main</SgntrPlc>
+      </MndtRltdInf>
+      <RmtInf><Ustrd>MONTHLY GAS SUPPLY CONTRACT REF/2024/ENRG/00145</Ustrd></RmtInf>
+    </Mndt>
+  </MndtInitnReq>
+</Document>
+```
+
+---
+
+### 7.4 pain.009 Scenarios
+
+`Pain009SampleFactory` provides four ready-to-run scenarios.
+
+#### SEPA Core recurring — monthly energy collection
+
+```java
+Pain009Message msg = Pain009SampleFactory.sepaCoreMonthlySample();
+// Energy supplier collecting monthly gas fees from an industrial customer
+// Scheme: CORE   Sequence: RCUR   Frequency: MNTH   Max: EUR 50,000
+String xml = new ISO20022Generator().generatePain009(msg);
+```
+
+#### B2B — weekly commodities margin calls
+
+```java
+Pain009Message msg = Pain009SampleFactory.commoditiesB2BSample();
+// Exchange (LME Clear) collecting weekly variation margin from commodity firm
+// Scheme: B2B   Sequence: RCUR   Frequency: WEEK   Advisory cap: USD 5,000,000
+```
+
+#### One-off — spot trade settlement
+
+```java
+Pain009Message msg = Pain009SampleFactory.oneOffSpotTradeSample();
+// Single collection to settle a spot crude oil trade (50,000 bbl × USD 47.50)
+// Scheme: CORE   Sequence: OOFF   Frequency: ADHO   Amount: USD 2,375,000
+```
+
+#### Amendment — debtor account change
+
+```java
+Pain009Message msg = Pain009SampleFactory.amendmentSample();
+// Creditor updating debtor IBAN and bank after customer migrates to Postbank
+// Flags: originalDebtorAccountChanged, originalDebtorAgentChanged
+```
+
+---
+
+### 7.5 pain.009 Validation
+
+Validation runs automatically inside `generatePain009()`. You can also run it manually before building.
+
+```java
+Pain009Validator validator = new Pain009Validator();
+ValidationResult result    = validator.validate(message);
+
+if (!result.isValid()) {
+    for (ValidationResult.Issue issue : result.getIssues()) {
+        System.out.println(issue.severity + " | " + issue.field + " | " + issue.message);
+    }
+}
+```
+
+#### Validation rules
+
+| Field | Rule |
+|---|---|
+| `GrpHdr/MsgId` | Mandatory, max 35 characters |
+| `GrpHdr/CreDtTm` | Mandatory |
+| `GrpHdr/NbOfTxs` | Must equal the actual number of mandates |
+| `GrpHdr/InitgPty/Nm` | Mandatory |
+| `MndtId` | Mandatory, max 35 characters |
+| `MndtReqId` | Mandatory, max 35 characters |
+| `Tp/SeqTp` | Must be FRST, RCUR, FNAL, or OOFF |
+| `Tp/LclInstrm` | If present: must be CORE, B2B, COR1, or PRIV |
+| `Ocrncs/Frqcy` | If present: must be DAIL, WEEK, TOWK, MNTH, TOMN, QUTR, SEMI, YEAR, or ADHO |
+| `FrstColltnDt` | Mandatory; warns if in the past |
+| `FnlColltnDt` | If present: must be after `FrstColltnDt` |
+| `MaxAmt` | If present: must be positive; ISO 4217 currency required |
+| `Cdtr/Nm` | Mandatory, max 140 characters |
+| `CdtrAcct/Id` | Either IBAN or BBAN required |
+| `CdtrAgt/FinInstnId` | Either BIC or clearing system member ID required |
+| `Dbtr/Nm` | Mandatory, max 140 characters |
+| `DbtrAcct/Id` | Either IBAN or BBAN required |
+| `DbtrAgt/FinInstnId` | Either BIC or clearing system member ID required |
+| BIC fields | 8 or 11 chars: `4a+2a+2c[+3c]` |
+| LEI | If present: exactly 20 characters |
+| `Amdmnt/OrgnlMndtId` | Mandatory when any amendment flag is set |
+
+---
+
 ## 8. Parsing Wire Format
 
-`SwiftParser` converts a raw SWIFT wire string back into a `SwiftMessage` object. All five blocks and all block-4 fields are extracted.
+`SwiftParser` converts a raw SWIFT FIN wire string back into a `SwiftMessage` object.
 
 ```java
 SwiftParser parser = new SwiftParser();
@@ -517,360 +645,346 @@ String wire =
 
 try {
     SwiftMessage msg = parser.parse(wire);
+    System.out.println(msg.getMessageType());       // "103"
+    System.out.println(msg.getFieldValue("32A"));   // "230915USD125000,00"
+    System.out.println(msg.getFieldValue("71A"));   // "SHA"
 
-    System.out.println(msg.getMessageType());        // "103"
-    System.out.println(msg.getFieldValue("32A"));    // "230915USD125000,00"
-    System.out.println(msg.getFieldValue("71A"));    // "SHA"
-
-    // Access the full block 4
     for (SwiftField field : msg.getBlock4().getFields()) {
         System.out.println(field.getTag() + " → " + field.getValue());
     }
-
-    // Get block 1 raw content
-    System.out.println(msg.getBlock1().getRawContent());
-
 } catch (SwiftParseException e) {
     System.err.println("Parse failed: " + e.getMessage());
 }
 ```
 
-### Round-trip test pattern
-
-```java
-// Generate
-SwiftMessage original = generator.generateMT103(data);
-String wire = original.toSwiftString();
-
-// Parse back
-SwiftMessage parsed = parser.parse(wire);
-
-// Verify
-assert original.getFieldValue("32A").equals(parsed.getFieldValue("32A"));
-assert original.getFieldValue("71A").equals(parsed.getFieldValue("71A"));
-```
-
 ---
 
-## 9. Validation
+## 9. Validation Reference
 
-Validation runs automatically inside every builder. You can also call it manually before building.
+### MT103
 
-### Manual validation
-
-```java
-MT103Validator   validator = new MT103Validator();
-ValidationResult result    = validator.validate(data);
-
-if (!result.isValid()) {
-    System.out.println("Errors: " + result.errorCount());
-    for (ValidationResult.Issue issue : result.getIssues()) {
-        // issue.severity  → ERROR / WARNING / INFO
-        // issue.field     → field tag e.g. "32A"
-        // issue.message   → human-readable description
-        System.out.println(issue);
-    }
-} else {
-    SwiftMessage msg = generator.generateMT103(data);
-}
-```
-
-### MT202 / MT940 / MT950 validation
-
-```java
-SwiftMessageValidator validator = new SwiftMessageValidator();
-
-ValidationResult vr202  = validator.validateMT202(transferData);
-ValidationResult vr202c = validator.validateMT202COV(transferData);
-ValidationResult vr940  = validator.validateMT940(statementData);
-ValidationResult vr950  = validator.validateMT950(statementData);
-```
-
-### What is validated
-
-**MT103**
-
-| Field | Check |
-|-------|-------|
+| Field | Rule |
+|---|---|
 | 20 | Mandatory, max 16 chars, SWIFT character set |
-| 23B | Mandatory, must be CRED / CRTS / SPAY / SSTD / SPRI |
-| 32A | Value date mandatory, currency = 3-letter ISO 4217, amount > 0 |
+| 23B | Mandatory: CRED / CRTS / SPAY / SSTD / SPRI |
+| 32A | Value date, 3-letter ISO 4217 currency, positive amount — all mandatory |
 | 50x | Ordering customer mandatory |
 | 59x | Beneficiary customer mandatory |
-| 71A | Mandatory, must be OUR / BEN / SHA |
+| 71A | Mandatory: OUR / BEN / SHA |
 | 33B | If present: currency required and amount > 0 |
-| 52A/53A etc. | If BIC present: format must be 8 or 11 chars (4a+2a+2c[+3c]) |
-| 70 | Warning if > 140 characters (4×35 SWIFT limit) |
+| BIC fields | 8 or 11 chars: `4a+2a+2c[+3c]` |
+| 70 | Warning if > 140 characters |
 
-**MT940 / MT950**
+### MT202 / MT202COV
 
-| Field | Check |
-|-------|-------|
+| Field | Rule |
+|---|---|
+| 20 | Mandatory, max 16 chars |
+| 21 | Mandatory (related reference), max 16 chars |
+| 32A | Value date, currency, amount all mandatory |
+| 58A | Beneficiary institution mandatory |
+| 50K / 59 | For MT202COV: underlying customer fields recommended |
+
+### MT940 / MT950
+
+| Field | Rule |
+|---|---|
 | 20 | Mandatory |
 | 25 | Account identification mandatory |
-| 60F | Opening balance, date, and indicator (C/D) mandatory |
-| 62F | Closing balance, date, and indicator (C/D) mandatory |
+| 60F/60M | Opening balance, date, and C/D indicator mandatory |
+| 62F/62M | Closing balance, date, and C/D indicator mandatory |
 | 61 | Each line: value date, positive amount, and reference mandatory |
 
 ---
 
 ## 10. SWIFT Format Reference
 
-### Date format — YYMMDD
+### Date — YYMMDD
 
 ```java
 LocalDate.of(2023, 9, 15)  →  "230915"
 ```
 
-`SwiftFormatUtil.formatDate(date)` handles this automatically.
-
-### Amount format — comma decimal, no thousands separator
+### Amount — comma decimal, no thousands separator
 
 ```java
 new BigDecimal("125000.00")  →  "125000,00"
-new BigDecimal("1234567.89") →  "1234567,89"
 new BigDecimal("0.50")       →  "0,50"
 ```
 
-`SwiftFormatUtil.formatAmount(amount)` handles this automatically.
+### BIC
 
-### BIC format
-
-| Length | Example | Meaning |
-|--------|---------|---------|
+| Length | Example | Notes |
+|---|---|---|
 | 8 chars | `CHASUS33` | Auto-padded to `CHASUS33XXX` |
 | 11 chars | `CHASUS33XXX` | Used as-is |
-
-BIC structure: `4a` (institution code) + `2a` (country) + `2c` (location) + optional `3c` (branch)
-
-`SwiftFormatUtil.bic11(bic)` pads 8-char BICs automatically.
 
 ### Name and address fields (50K, 52D, 59, etc.)
 
 ```
-/ACCOUNT_NUMBER     ← up to 34 chars, prefixed with /
-NAME                ← up to 35 chars
-ADDRESS LINE 1      ← up to 35 chars
-ADDRESS LINE 2      ← up to 35 chars
+/ACCOUNT_NUMBER      up to 34 chars, prefixed with /
+NAME                 up to 35 chars
+ADDRESS LINE 1       up to 35 chars
+ADDRESS LINE 2       up to 35 chars
 ```
 
-`SwiftFormatUtil.formatNameAddress(accountNo, name, address1, address2)` builds this automatically.
+### SWIFT character set (X)
 
-### Block structure
-
-```
-Block 1: {1:F01<11-char-sender-BIC><session><sequence>}
-Block 2: {2:I<3-char-MT><11-char-receiver-BIC><priority>}  ← I = Input, O = Output
-Block 3: {3:{108:<user-reference>}}
-Block 4: {4:\r\n:TAG:VALUE\r\n:TAG:VALUE\r\n-}
-Block 5: {5:{CHK:<12-char-checksum>}}
-```
+Allowed: `A–Z  a–z  0–9  / - ? : ( ) . , ' +  space  newline`
 
 ---
 
 ## 11. Field Catalogue
 
-`SwiftFieldDefinitions.getAll()` returns all 50+ registered fields. Below are the most commonly used ones.
+`SwiftFieldDefinitions.getAll()` returns all 50+ registered field definitions.
 
 ### Payment fields (MT103 / MT202)
 
-| Tag | Name | Format | Notes |
-|-----|------|--------|-------|
-| 20 | Transaction Reference Number | 16x | Mandatory |
-| 21 | Related Reference | 16x | Mandatory for MT202 |
-| 23B | Bank Operation Code | 4!a | CRED / CRTS / SPAY / SSTD / SPRI |
-| 32A | Value Date/Currency/Amount | 6!n 3!a 15d | YYMMDD + ISO currency + comma amount |
-| 33B | Currency/Instructed Amount | 3!a 15d | Optional |
-| 36 | Exchange Rate | 12d | Optional |
-| 50A/K/F | Ordering Customer | varies | 50K = name+address, 50A = BIC |
-| 52A/D | Ordering Institution | varies | 52A = BIC, 52D = name+address |
-| 53A/B | Sender's Correspondent | varies | |
-| 54A | Receiver's Correspondent | varies | |
-| 56A | Intermediary Institution | varies | |
-| 57A/D | Account With Institution | varies | |
-| 58A/D | Beneficiary Institution | varies | MT202 / MT202COV only |
-| 59/A/F | Beneficiary Customer | varies | 59 = no option, 59A = BIC |
-| 70 | Remittance Information | 4×35x | Free text, 4 lines of 35 chars |
-| 71A | Details of Charges | 3!a | OUR / BEN / SHA |
-| 72 | Sender to Receiver Information | 6×35x | |
-| 77B | Regulatory Reporting | 3×35x | |
+| Tag | Name | Format |
+|---|---|---|
+| 20 | Transaction Reference Number | 16x |
+| 21 | Related Reference | 16x |
+| 23B | Bank Operation Code | 4!a |
+| 32A | Value Date / Currency / Amount | 6!n 3!a 15d |
+| 33B | Currency / Instructed Amount | 3!a 15d |
+| 36 | Exchange Rate | 12d |
+| 50A/K/F | Ordering Customer | varies |
+| 52A/D | Ordering Institution | varies |
+| 53A/B | Sender's Correspondent | varies |
+| 54A | Receiver's Correspondent | varies |
+| 56A | Intermediary Institution | varies |
+| 57A/D | Account With Institution | varies |
+| 58A/D | Beneficiary Institution | varies |
+| 59/A/F | Beneficiary Customer | varies |
+| 70 | Remittance Information | 4×35x |
+| 71A | Details of Charges | 3!a |
+| 72 | Sender to Receiver Information | 6×35x |
+| 77B | Regulatory Reporting | 3×35x |
 
 ### Statement fields (MT940 / MT950)
 
-| Tag | Name | Format | Notes |
-|-----|------|--------|-------|
-| 25 | Account Identification | 35x | |
-| 25P | Account Identification + BIC | 35x + BIC | MT940 variant |
-| 28C | Statement/Sequence Number | 5n[/5n] | |
-| 60F/M | Opening Balance | 1!a 6!n 3!a 15d | F = final, M = intermediate |
-| 61 | Statement Line | complex | Value date + D/C + amount + type + ref |
-| 62F/M | Closing Balance | 1!a 6!n 3!a 15d | |
-| 64 | Closing Available Balance | 1!a 6!n 3!a 15d | MT940 only |
-| 65 | Forward Available Balance | 1!a 6!n 3!a 15d | MT940 only |
-| 86 | Information to Account Owner | 6×65x | MT940 only; follows Field 61 |
+| Tag | Name | Format |
+|---|---|---|
+| 25 / 25P | Account Identification | 35x |
+| 28C | Statement / Sequence Number | 5n[/5n] |
+| 60F/M | Opening Balance | 1!a 6!n 3!a 15d |
+| 61 | Statement Line | complex |
+| 62F/M | Closing Balance | 1!a 6!n 3!a 15d |
+| 64 | Closing Available Balance | 1!a 6!n 3!a 15d |
+| 86 | Information to Account Owner | 6×65x |
 
 ---
 
-## 12. Running Tests
+## 12. OpenLink Findur and Endur Integration
 
-The test suite requires no JUnit or test framework — it is entirely self-contained.
+The library maps directly from Findur and Endur deal objects without any middleware layer.
+
+### MT103 from a Findur deal
+
+```java
+Deal deal = dealService.getDeal(dealId);
+Counterparty cpty = deal.getCounterparty();
+
+TransferData data = new TransferData();
+data.transactionReference = "FND-" + deal.getDealId();
+data.bankOperationCode    = "CRED";
+data.detailsOfCharges     = "SHA";
+data.valueDate            = deal.getSettlementDate();
+data.currency             = deal.getCurrency();
+data.amount               = deal.getSettlementAmount();
+
+Customer oc = new Customer();
+oc.accountNo = deal.getInternalAccount().getIban();
+oc.name      = deal.getInternalAccount().getAccountName();
+data.orderingCustomer = oc;
+
+Customer bc = new Customer();
+bc.accountNo = cpty.getAccount().getIban();
+bc.name      = cpty.getLegalName();
+bc.address1  = cpty.getAddress().getStreet();
+bc.city      = cpty.getAddress().getCity();
+data.beneficiaryCustomer = bc;
+
+data.accountWithInstitution = new BankParty(cpty.getBank().getBic());
+data.senderBic   = deal.getInternalBank().getBic11();
+data.receiverBic = cpty.getBank().getBic11();
+data.remittanceInfo = "TRD/" + deal.getDealReference();
+
+String wire = new SwiftGenerator().generateMT103Wire(data);
+swiftAdapter.send(wire);
+```
+
+### pain.009 mandate from an Endur direct debit agreement
+
+```java
+Agreement agreement = agreementService.get(agreementId);
+
+GroupHeader hdr = new GroupHeader();
+hdr.messageId          = "ENDUR-MNDT-" + agreement.getId();
+hdr.creationDateTime   = LocalDateTime.now();
+hdr.numberOfTransactions = 1;
+hdr.initiatingParty    = new PartyId(agreement.getMyLegalEntity().getName());
+
+MandateData m = new MandateData();
+m.mandateId        = "MNDT-" + agreement.getId();
+m.mandateRequestId = "MREQ-" + agreement.getId() + "-001";
+
+m.type = new MandateType();
+m.type.sequenceType        = "RCUR";
+m.type.localInstrumentCode = "CORE";
+
+m.frequency           = new Frequency("MNTH");
+m.firstCollectionDate = agreement.getStartDate();
+m.finalCollectionDate = agreement.getEndDate();
+m.maximumAmount       = agreement.getMaximumCollectionAmount();
+m.currency            = agreement.getCurrency();
+
+m.creditor        = new PartyId(agreement.getMyLegalEntity().getName());
+m.creditorAccount = new AccountId(agreement.getMyAccount().getIban(), agreement.getCurrency());
+m.creditorAgent   = new BankAgent(agreement.getMyBank().getBic());
+
+m.debtor        = new PartyId(agreement.getCounterparty().getLegalName());
+m.debtorAccount = new AccountId(agreement.getCptyAccount().getIban(), agreement.getCurrency());
+m.debtorAgent   = new BankAgent(agreement.getCptyBank().getBic());
+
+m.signatureDate         = agreement.getSignatureDate();
+m.remittanceInformation = agreement.getReference();
+
+Pain009Message message = new Pain009Message(hdr);
+message.addMandate(m);
+
+String xml = new ISO20022Generator().generatePain009(message);
+isoAdapter.submit(xml);
+```
+
+---
+
+## 13. Running Tests
+
+The test suites require no JUnit or external framework — they are entirely self-contained.
 
 ```bash
-# Shell
+# All tests via shell script
 ./build.sh test
 
-# Maven
+# All tests via Maven
 mvn test
 
-# Direct
-javac -d out $(find src -name "*.java")
+# MT suite only
 java -cp out com.kazhuga.swift.SwiftLibraryTests
+
+# pain.009 suite only
+java -cp out com.kazhuga.swift.iso20022.pain009.Pain009Tests
 ```
 
 Expected output:
 
 ```
-Running SWIFT Library Tests  [com.kazhuga.swift]
-
-  -- SwiftFormatUtil
-    PASS: formatAmount 1234.56
-    PASS: formatDate
-    PASS: bic11 pads 8-char
-    ... (9 tests)
-
-  -- MT103Validator
-    PASS: Valid sample passes
-    PASS: Null data fails
-    ... (6 tests)
-
-  -- MT103 Generation    (15 tests)
-  -- MT202 Generation    (5 tests)
-  -- MT202COV Generation (4 tests)
-  -- MT940 Generation    (11 tests)
-  -- MT950 Generation    (4 tests)
-  -- SwiftParser         (4 tests)
-  -- Round-trip MT940    (3 tests)
-
-----------------------------------------------
-Results: 61 passed, 0 failed
+MT suite  :  61 passed, 0 failed
+pain.009  :  58 passed, 0 failed
+Total     : 119 passed, 0 failed
 ```
 
 ---
 
-## 13. Extending the Library
+## 14. Extending the Library
 
-### Adding a new message type (e.g. MT101)
-
-**Step 1 — Add field tags** (if any are new) to `SwiftFieldDefinitions.java`:
+### Adding a new MT message type (e.g. MT101)
 
 ```java
-register("50C", "Instructing Party", "[/34x]\\n4!a2!a2!c[3!c]", "101");
-```
-
-**Step 2 — Add a data model** in `SwiftData.java` (or reuse `TransferData`):
-
-```java
-public static class MT101Data {
-    public String  transactionReference;
-    public String  relatedReference;
-    public List<MT101Transaction> transactions = new ArrayList<>();
-    // ...
-}
-```
-
-**Step 3 — Create a builder**:
-
-```java
-package com.kazhuga.swift.messages;
-
+// Step 1: create the builder
 public class MT101Builder extends AbstractMessageBuilder {
-
-    private final MT101Data data;
-
-    public MT101Builder(MT101Data data) {
-        super("101");
-        this.data = data;
-    }
+    public MT101Builder(TransferData data) { super("101"); ... }
 
     @Override
     public SwiftMessage build() {
-        // validate
-        // buildHeaders(senderBic, receiverBic, "101", 'U');
-        // addField("20", data.transactionReference);
-        // ... populate all fields in SWIFT sequence order ...
+        buildHeaders(data.senderBic, data.receiverBic, "101", 'U');
+        addField("20", data.transactionReference);
+        addField("21", data.relatedReference);
+        // add all remaining fields in SWIFT sequence order
         return message;
     }
 }
-```
 
-**Step 4 — Expose through the facade**:
-
-```java
-// In SwiftGenerator.java
-public SwiftMessage generateMT101(MT101Data data) {
+// Step 2: expose through the facade
+// In SwiftGenerator.java:
+public SwiftMessage generateMT101(TransferData data) {
     return new MT101Builder(data).build();
 }
 ```
 
-**Step 5 — Add a validator** following the same pattern as `MT103Validator`.
+Also add any new field tags to `SwiftFieldDefinitions.java` and create a validator following the `MT103Validator` pattern.
 
-### Adding a custom field formatter
-
-`SwiftFormatUtil` is a plain utility class — add static methods:
+### Adding a new ISO 20022 message type (e.g. pain.008)
 
 ```java
-public static String formatIBAN(String iban) {
-    // remove spaces, validate checksum, return formatted string
+// Step 1: create data POJOs in iso20022/model/Pain008Data.java
+// Step 2: create the builder using the internal XmlWriter pattern
+public class Pain008Builder {
+    public String build() { ... }
+}
+
+// Step 3: expose through the facade
+// In ISO20022Generator.java:
+public String generatePain008(Pain008Data.Pain008Message message) {
+    return new Pain008Builder(message).build();
 }
 ```
 
 ---
 
-## 14. FAQ
+## 15. FAQ
 
-**Q: Can I use this in a production SWIFT integration?**
+**Q: Can I use this in a live SWIFT production environment?**
 
-A: The library generates syntactically correct SWIFT FIN messages. Whether they are accepted by a live SWIFT network depends on your institution's SWIFT connectivity, approved message profiles, and regulatory requirements. Always test against a SWIFT test environment before going live.
+The library generates syntactically and structurally correct messages. Acceptance by a live SWIFT network depends on your institution's SWIFT connectivity, approved message profiles, and regulatory requirements. Always test in a SWIFT test environment first.
 
-**Q: Does the library support MT202 under the new CBPR+ / ISO 20022 regime?**
+**Q: Does pain.009 support SEPA B2B as well as SEPA Core?**
 
-A: This library targets the legacy SWIFT FIN (MT) format. ISO 20022 / MX messages use XML and are a separate standard. CBPR+ migration timelines vary — check with your SWIFT service bureau.
+Yes. Set `m.type.localInstrumentCode = "B2B"` for Business-to-Business mandates. All other fields work identically.
 
-**Q: How do I handle multi-currency or exotic currencies?**
+**Q: How do I send multiple mandates in a single pain.009 message?**
 
-A: Pass any valid ISO 4217 currency code to `data.currency`. The library validates that the code is exactly three uppercase letters but does not restrict to a specific currency list.
+Call `message.addMandate(mandate)` for each mandate. The library automatically keeps `NbOfTxs` in the group header in sync with the actual list size. There is no built-in limit on mandate count per message.
 
-**Q: Can I parse messages from external systems?**
+**Q: Can I use a BBAN instead of an IBAN in pain.009?**
 
-A: Yes. `SwiftParser.parse(wire)` accepts any conformant SWIFT FIN wire string. Multi-line field values and all five blocks are handled.
+Yes. Set `accountId.bban` instead of `accountId.iban`. The builder outputs `<Othr><Id>BBAN_VALUE</Id></Othr>` in place of `<IBAN>`.
 
-**Q: Field 61 has a complex format — do I need to format it manually?**
+**Q: How do I handle a mandate amendment?**
 
-A: No. `MT940Builder.buildStatementLine(line)` constructs the Field 61 value from your `StatementLine` POJO automatically.
+Populate `MandateData.amendment` with an `AmendmentIndicator` object and set the boolean flags for each field that has changed. Also set `m.originalMandateId` to the ID of the existing mandate. The validator rejects the message if amendment flags are set but `originalMandateId` is missing.
 
-**Q: How do I handle very long remittance information?**
+**Q: What is the relationship between pain.009 and pain.008?**
 
-A: SWIFT limits Field 70 to 4 lines of 35 characters (140 total). The validator issues a warning if `data.remittanceInfo` exceeds 140 characters. Truncate or split the text before generating the message. For structured remittance information, consider using the `/RFB/`, `/INV/` or `/USTRD/` prefixes within the 140-character limit.
+pain.009 registers the mandate (the authorisation). pain.008 (CustomerDirectDebitInitiation) is the subsequent collection instruction that references the registered mandate ID. pain.008 support is planned for a future release.
 
-**Q: Can I generate batch payments?**
+**Q: Field 61 in MT940 has a complex format — do I need to build it manually?**
 
-A: MT103 is a single-payment message. For batch customer credit transfers, consider MT101 (not yet implemented) or ISO 20022 `pain.001`. You can generate multiple MT103 instances in a loop using this library.
+No. `MT940Builder.buildStatementLine(line)` constructs the Field 61 value from your `StatementLine` POJO automatically, including value date, entry date, debit/credit indicator, amount, transaction type code, and references.
 
-**Q: Why is the checksum in Block 5 random?**
+**Q: Does this library support ISO 20022 CBPR+ migration formats?**
 
-A: The Block 5 `{CHK:...}` value in real SWIFT FIN messages is computed by the SWIFT interface device (SID) after transmission — it is not part of the message content you compose. This library generates a placeholder that identifies the message in logs. Replace it with the real checksum if your infrastructure requires it.
+The current release covers `pain.009.001.08`. CBPR+ migration for MT103 (`pacs.008`) and MT202 (`pacs.009`) is planned.
 
----
+**Q: Why is the checksum in Block 5 a placeholder?**
 
-## 15. Disclaimer
-
-This library generates syntactically correct SWIFT FIN messages for integration, testing, and educational purposes.
-
-- Field values and BICs in the sample data are **fictional** and for demonstration only.
-- Production use in live SWIFT networks requires approval from SWIFT and compliance with your institution's regulatory and connectivity obligations.
-- The authors make no warranty that messages generated by this library will be accepted by any specific bank, clearing system, or correspondent.
-- This is not financial or legal advice.
+The `{CHK:...}` value in real SWIFT FIN messages is computed by the SWIFT interface device after transmission and is not part of the message content you compose. The library generates a placeholder. Replace it with the real checksum if your infrastructure computes and verifies it.
 
 ---
 
-*Generated by the Kazhuga SWIFT Message Generator — `com.kazhuga.swift` — MIT License*
+## 16. Disclaimer
+
+This library generates syntactically correct SWIFT FIN and ISO 20022 messages for integration, testing, and educational purposes.
+
+Field values, IBANs, BICs, and amounts in the sample data are fictional and for demonstration only.
+
+Production use in live SWIFT networks or SEPA clearing requires approval from the relevant network operators and compliance with your institution's regulatory and connectivity obligations.
+
+The authors make no warranty that messages generated by this library will be accepted by any specific bank, clearing system, or correspondent.
+
+This is not financial, legal, or regulatory advice.
+
+---
+
+*Kazhuga — `com.kazhuga.swift` — MIT License*
